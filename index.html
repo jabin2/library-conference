@@ -672,6 +672,7 @@ function buildWeekRow(w, mIdx){
     addBtn.addEventListener('click',()=>openModal(w.label));
     tasks.appendChild(addBtn);
   }
+  if(!w.label || !w.range) return document.createDocumentFragment();
   row.appendChild(lbl); row.appendChild(tasks);
   updateProgress(row);
   return row;
