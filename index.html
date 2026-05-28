@@ -153,9 +153,16 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--surface);color:var(-
 .task-chip .task-text strong{color:var(--ink);font-weight:600;}
 .task-chip .task-text .date-tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--ink3);background:rgba(0,0,0,.04);padding:0 5px;border-radius:4px;margin-left:4px;}
 .task-chip.k .task-text .date-tag{color:var(--key-dark);}
-.delete-btn{background:none;border:none;color:#CBD5E1;font-size:.8rem;cursor:pointer;padding:0 2px;flex-shrink:0;margin-top:1px;transition:color .15s;display:none;}
-.task-chip.custom-task:hover .delete-btn{display:block;}
-.delete-btn:hover{color:var(--key-dark);}
+.delete-btn,.edit-btn{background:none;border:none;font-size:.90rem;cursor:pointer;padding:0 3px;flex-shrink:0;margin-top:1px;transition:color .15s;display:none;}
+.delete-btn{color:#5c6066;}.delete-btn:hover{color:var(--key-dark);}
+.edit-btn{color:#5c6066;}.edit-btn:hover{color:var(--accent);}
+.task-chip.custom-task:hover .delete-btn,
+.task-chip.custom-task:hover .edit-btn{display:block;}
+.drag-handle{display:none;color:#5c6066;cursor:grab;font-size:.85rem;padding:0 3px;flex-shrink:0;margin-top:1px;user-select:none;}
+.drag-handle:active{cursor:grabbing;}
+.task-chip.custom-task:hover .drag-handle{display:block;}
+.task-chip.drag-over{border-top:2px solid var(--accent);}
+.task-chip.dragging{opacity:.4;}
 .wlic-notice{background:var(--wlic);border:1.5px solid var(--wlic-border);border-radius:10px;padding:11px 16px;display:flex;align-items:center;gap:9px;font-size:.83rem;color:#92400E;font-weight:500;}
 .event-table{width:100%;border-collapse:collapse;border-radius:10px;overflow:hidden;border:1px solid var(--border);}
 .event-table th{background:var(--accent);color:#fff;padding:9px 14px;font-size:.81rem;text-align:left;}
@@ -225,9 +232,9 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--surface);color:var(-
       <div class="form-row">
         <label>담당 구분</label>
         <div class="type-row">
-          <button class="type-btn" data-type="h" onclick="selectType(this,&#39;h&#39;)">협회</button>
-          <button class="type-btn" data-type="y" onclick="selectType(this,&#39;y&#39;)">용역사</button>
-          <button class="type-btn" data-type="b" onclick="selectType(this,&#39;b&#39;)">공동</button>
+          <button class="type-btn" data-type="h">협회</button>
+          <button class="type-btn" data-type="y">용역사</button>
+          <button class="type-btn" data-type="b">공동</button>
         </div>
       </div>
       <div class="form-row">
@@ -296,7 +303,33 @@ onValue(_doneRef, snap => {
 onValue(_customRef, snap => {
   const val = snap.val();
   _customCache = val ? Object.values(val) : [];
-  if (_dbReady) { render(); renderCalendar(); applyFilter(); }
+  if (_dbReady) {
+    // 모든 칩 교체 (기존+커스텀 모두 동일하게 관리)
+    document.querySelectorAll('.week-row').forEach(row => {
+      const weekLabel = row.dataset.weekLabel;
+      const tasks = row.querySelector('.week-tasks');
+      if (!tasks) return;
+      // 기존 칩 전부 제거
+      tasks.querySelectorAll('.task-chip').forEach(el => el.remove());
+      // done-count 제거 후 재생성
+      row.querySelector('.done-count')?.remove();
+      const addBtn = tasks.querySelector('.add-here-btn');
+      const weekTasks = _customCache.filter(c => c.weekLabel === weekLabel);
+      if(weekTasks.length > 0){
+        const lbl = row.querySelector('.week-label');
+        const cnt = document.createElement('div'); cnt.className='done-count';
+        cnt.innerHTML=`<span>0/${weekTasks.length} 완료</span><div class="done-bar-wrap"><div class="done-bar" style="width:0%"></div></div>`;
+        lbl.appendChild(cnt);
+        weekTasks.forEach(t => {
+          const chip = buildTaskChip(t, true);
+          tasks.insertBefore(chip, addBtn);
+        });
+      }
+      updateProgress(row);
+    });
+    renderCalendar();
+    applyFilter();
+  }
 });
 
 function loadDone()    { return _doneCache; }
@@ -311,7 +344,7 @@ function saveCustom(a) {
 function taskKey(t)    { return t.who + '|' + t.text; }
 
 // ══════════════════════════════════════════════════
-//  데이터 (docx 기준 전면 수정)
+//  데이터 (exel 기준 수정)
 // ══════════════════════════════════════════════════
 const data=[
 {month:"3월",badge:"3월",desc:"기반 마련",weeks:[
@@ -319,82 +352,87 @@ const data=[
     {who:"협회",type:"h",text:"기본계획 수립 완료",date:"3/26(목)"},
   ]}
 ]},
-{month:"4~5월",badge:"4·5월",desc:"용역사 선정 · 대회 기반 구축",weeks:[
-  {label:"4월 2주~6월 1주",range:"4/7(화)~6/7(일)",tasks:[
+{month:"4월",badge:"4월",desc:"용역사 선정",weeks:[
+  {label:"4월 3주",range:"4/20(월)~4/26(일)",tasks:[
     {who:"협회",type:"h",text:"행사 용역사 공모 및 선정·계약",date:"4/22(수)~6/11(목)"},
   ]},
-  {label:"5월 2~3주",range:"5/11(월)~5/24(일)",tasks:[
-    {who:"협회",type:"h",text:"대회 주제 공모",date:"5/12(화)~5/20(수)"},
-    {who:"협회",type:"h",text:"차기·차차기 개최지 홍보 영상 요청",date:"5/26(화)~9/30(수)"},
+]},
+{month:"5월",badge:"5월",desc:"대회 기반 구축",weeks:[
+  {label:"5월 1주",range:"5/4(월)~5/10(일)",tasks:[
   ]},
-  {label:"5월 3~4주",range:"5/18(월)~5/31(일)",tasks:[
+  {label:"5월 2주",range:"5/11(월)~5/17(일)",tasks:[
+    {who:"협회",type:"h",text:"대회 주제 공모",date:"5/12(화)~5/20(수)"},
+  ]},
+  {label:"5월 3주",range:"5/18(월)~5/24(일)",tasks:[
     {who:"협회",type:"h",text:"주제 선정 (사무국 및 회원 선호도 조사 포함)",date:"5/21(목)~5/29(금)"},
   ]},
-  {label:"6월 2주~7월 1주",range:"6/10(수)~7/17(금)",tasks:[
-    {who:"협회",type:"h",text:"차차기 개최지 공모 및 선정",date:"6/10(수)~7/17(금)"},
+  {label:"5월 4주",range:"5/25(월)~5/31(일)",tasks:[
+    {who:"협회",type:"h",text:"차기·차차기 개최지 홍보 영상 요청",date:"5/26(화)~9/30(수)"},
   ]},
 ]},
 {month:"6월",badge:"6월",desc:"전시·홈페이지 준비",weeks:[
-  {label:"6월 1~2주",range:"6/1(월)~6/14(일)",tasks:[
+  {label:"6월 1주",range:"6/1(월)~6/7(일)",tasks:[
     {who:"용역사",type:"y",text:"도서관문화전시회 기본계획 수립",date:"~6/19(금)"},
     {who:"용역사",type:"y",text:"부스 배치도(안) 확정",date:"~6/19(금)"},
-    {who:"용역사",type:"y",text:"포스터 제작",date:"6/15(월)~6/30(화)"},
   ]},
-  {label:"6월 2~3주",range:"6/8(월)~6/21(일)",tasks:[
-    {who:"용역사",type:"y",text:"도서관대회·전시회 홈페이지 수정 및 최신화",date:"6/15(월)~7/3(금)"},
-    {who:"공동",type:"b",text:"개최지 현장 답사",date:"6/17(수), 협의필요"},
+  {label:"6월 2주",range:"6/8(월)~6/14(일)",tasks:[
     {who:"용역사",type:"y",text:"도서관대회·전시회 홈페이지 개편 및 운영",date:"6/8(월)~12/31(목)"},
+    {who:"협회",type:"h",text:"차차기 개최지 공모 및 선정",date:"6/10(수)~7/17(금)"},
   ]},
-  {label:"6월 4주~7월 1주",range:"6/22(월)~7/5(일)",tasks:[
+  {label:"6월 3주",range:"6/15(월)~6/21(일)",tasks:[
+    {who:"용역사",type:"y",text:"도서관대회·전시회 홈페이지 수정 및 최신화",date:"6/15(월)~7/3(금)"},
+    {who:"용역사",type:"y",text:"포스터 제작",date:"6/15(월)~6/30(화)"},
+    {who:"공동",type:"b",text:"개최지 현장 답사",date:"6/17(수), 협의필요"},
+  ]},
+  {label:"6월 4주",range:"6/22(월)~6/30(화)",tasks:[
     {who:"협회",type:"h",text:"후원명칭 사용 요청 및 승인 확인",date:"6/29(월)~7/3(금)"},
     {who:"공동",type:"b",text:"프로그램 및 튜토리얼 기본계획 수립",date:"6/29(월)~7/10(금)"},
     {who:"용역사",type:"y",text:"포스터세션 모집 계획 수립(위치·규모 확정)",date:"6/29(월)~7/10(금)"},
     {who:"용역사",type:"y",text:"튜토리얼 기본계획 수립",date:"6/29(월)~7/10(금)"},
   ]},
 ]},
-{month:"7월",badge:"7월",desc:"모집 공고 전면 개시 ★가장 바쁜 달",weeks:[
-  {label:"7월 1~2주",range:"7/1(수)~7/12(일)",tasks:[
+{month:"7월",badge:"7월",desc:"모집 공고 전면 개시",weeks:[
+  {label:"7월 1,2주",range:"7/1(수)~7/12(일)",tasks:[
+    {who:"용역사",type:"y",text:"신문광고 제작 및 배포(내일신문)",date:"7~10월(홀수 주)"},
     {who:"공동",type:"b",text:"숙박 루밍리스트 관리",date:"7월~10월"},
     {who:"용역사",type:"y",text:"대회 홈페이지 참가등록 개선",date:"7월~10월"},
-    {who:"용역사",type:"y",text:"신문광고 제작 및 배포(내일신문)",date:"7~10월(홀수 주)"},
     {who:"협회",type:"h",text:"지방보조금 교부 신청",date:"7/6(월)~7/10(금)"},
-    {who:"공동",type:"b",text:"접수 및 전시참가비 입금 확인",date:"7/8(수)~10/16(금)"},
+    {who:"공동",type:"b",text:"전시회 접수 및 전시참가비 입금 확인",date:"7/8(수)~10/16(금)"},
     {who:"용역사",type:"y",text:"참가사 모집(세미나)",date:"7/8(수)~8/19(수)"},
     {who:"용역사",type:"y",text:"프로그램 홈페이지 수정 및 최신화",date:"~7/10(금)"},
-    {who:"협회",type:"h",text:"프로그램 운영 협회 산하협의회 지원금 안내",date:"7/13(월)"},
     {who:"협회",type:"h",text:"프로그램 주제 및 발표자 섭외",date:"7/10(금)~7/31(금)"},
   ]},
-  {label:"7월 2주",range:"7/13(월)~7/19(일)",tasks:[
+  {label:"7월 3주",range:"7/13(월)~7/19(일)",tasks:[
+    {who:"협회",type:"h",text:"프로그램 운영 협회 산하협의회 지원금 안내",date:"7/13(월)"},
     {who:"공동",type:"b",text:"프로그램 모집 공문 발송(문서24, 메일)",date:"7/13(월)~8/4(화)"},
     {who:"용역사",type:"y",text:"전시회 참가사 모집 공문 발송 및 사전신청",date:"7/13(월)~8/4(화)"},
     {who:"용역사",type:"y",text:"포스터세션 모집 공고(전시 얼리버드와 동일)",date:"7/13(월)~8/4(화)"},
     {who:"용역사",type:"y",text:"프로그램 진행 기관 세션 내용 입력",date:"7/13(월)~9/11(금)"},
     {who:"용역사",type:"y",text:"프로그램 진행 기관 발표자료 파일 업로드",date:"7/13(월)~9/25(금)"},
   ]},
-  {label:"7월 3주",range:"7/20(월)~7/26(일)",tasks:[
+  {label:"7월 4주",range:"7/20(월)~7/26(일)",tasks:[
     {who:"용역사",type:"y",text:"협찬사 모집·관리",date:"7/20(월)~9/11(금)"},
-    {who:"공동",type:"b",text:"초청장 제작·발송 대상자 명단 정리 시작",date:"8/10(월)~8/28(금)"},
   ]},
-  {label:"7월 4주",range:"7/27(월)~8/2(일)",tasks:[
+  {label:"7월 5주",range:"7/27(월)~8/2(일)",tasks:[
     {who:"용역사",type:"y",text:"참가자 안내사항(숙박·관광 등) 리스트 정리",date:"7/27(월)~8/6(목)"},
     {who:"용역사",type:"y",text:"전시회 기자재·부대시설 신청 접수 시작",date:"7/27(월)~9/29(화)"},
+    {who:"공동",type:"b",text:"개최 안내 공문 발송(학교도서관, 17개시·도대표도서관)",date:"7/29(금)"},
   ]},
 ]},
 {month:"8월 1주",badge:"8/1주",desc:"공문발송 기준일 ★핵심",special:"key",weeks:[
-  {label:"8월 1주 ★핵심",range:"8/4(화)~8/9(일)",tasks:[
+  {label:"8월 1주 ★",range:"8/3(월)~8/9(일)",tasks:[
+    {who:"용역사",type:"y",text:"전시회 관련 택배 안내 (상시안내)",date:"8/3(월)~"},
     {who:"용역사",type:"y",text:"전시회 참가사 사전신청 마감",date:"~8/4(화)"},
     {who:"공동",type:"b",text:"프로그램 모집 공문 발송 마감",date:"~8/4(화)"},
     {who:"용역사",type:"y",text:"전시회 참가사 모집(일반신청) 개시",date:"8/5(수)~8/31(월)"},
-    {who:"용역사",type:"y",text:"개최 안내 공문 발송(이메일)",date:"8/7(금)"},
     {who:"용역사",type:"y",text:"참가등록 사전신청 개시(사전등록)",date:"8/7(금)~8/28(금)"},
   ]},
-  {label:"8월 2주 WLIC",range:"8/10(화)~8/16(일)",wlic:true,tasks:[
+  {label:"8월 2주 WLIC",range:"8/10(월)~8/16(일)",wlic:true,tasks:[
+    {who:"공동",type:"b",text:"초청장 제작·발송 대상자 명단 정리 시작",date:"8/10(월)~8/28(금)"},
   ]},
 ]},
 {month:"8월 3~4주",badge:"8/3·4주",desc:"준비 본격화",weeks:[
-  {label:"8월 3주",range:"8/18(화)~8/24(월)",tasks:[
-    {who:"용역사",type:"y",text:"전시 일반신청 계속 진행",date:"~8/31(월)"},
-    {who:"용역사",type:"y",text:"참가등록 사전신청 진행 중",date:"~8/28(금)"},
+  {label:"8월 3주",range:"8/18(화)~8/23(일)",tasks:[
     {who:"용역사",type:"y",text:"참가사 모집(세미나) 마무리",date:"~8/19(수)"},
   ]},
   {label:"8월 4주",range:"8/24(월)~8/30(일)",tasks:[
@@ -402,53 +440,54 @@ const data=[
     {who:"협회",type:"h",text:"시상식·홍보부스 운영 계획 수립",date:"8/24(월)~9/4(금)"},
     {who:"공동",type:"b",text:"프로그램 진행 기관 선정 및 공지",date:"8/24(월)~8/26(수)"},
     {who:"용역사",type:"y",text:"프로그램 일정표 작성 및 공유",date:"8/24(월)~9/4(금)"},
+    {who:"협회",type:"h",text:"기념품 제작(상품 및 디자인 작업 포함)",date:"8/24(월)~10/2(금)"},
     {who:"용역사",type:"y",text:"참가등록 사전신청 마감",date:"8/28(금)"},
     {who:"용역사",type:"y",text:"자원봉사 모집 공고 시작",date:"8/31(월)~10/29(목)"},
-    {who:"협회",type:"h",text:"기념품 제작(상품 및 디자인 작업 포함)",date:"8/24(월)~10/2(금)"},
     {who:"용역사",type:"y",text:"자원봉사 모집 공고 시작",date:"8/31(월)~10/29(목)"},
     {who:"협회",type:"h",text:"문화공연(개회식 만남의자리) 섭외",date:"8/31(월)~9/11(금)"},
     {who:"협회",type:"h",text:"시상식 참석자 명단 조사 시작",date:"8/31(월)~9/18(금)"},
+    {who:"용역사",type:"y",text:"참가등록 일반신청 개시(일반등록)",date:"8/31(월)~9/30(수)"},
   ]},
 ]},
 {month:"9월",badge:"9월",desc:"최종 준비 · 모집 마감",weeks:[
   {label:"9월 1주",range:"9/1(화)~9/6(일)",tasks:[
-    {who:"용역사",type:"y",text:"참가등록 일반신청 개시(일반등록)",date:"9/1(화)~9/18(금)"},
     {who:"용역사",type:"y",text:"협회 홍보부스 기본계획 수립",date:"9/1(화)~9/11(금)"},
-    {who:"협회",type:"h",text:"지방보조금 운영",date:"9/7(월)~11/6(금)"},
-    {who:"용역사",type:"y",text:"각종 제작물 제작(통천, X배너, 사인물 등)",date:"9/7(월)~10/8(목)"},
-    {who:"용역사",type:"y",text:"대회진행본부·물품보관소 등 행사진행 공간 확정",date:"9/7(월)~9/18(금)"},
   ]},
   {label:"9월 2주",range:"9/7(월)~9/13(일)",tasks:[
-    {who:"용역사",type:"y",text:"프로그램 자료집 제작(PDF)",date:"9/7(월)~10/14(수)"},
     {who:"공동",type:"b",text:"초청장 발송",date:"9/7(월)~9/11(금)"},
-    {who:"용역사",type:"y",text:"전시 부스 추첨식(주요 안내사항 공지 포함)",date:"9/7(월)~9/11(금)"},
-    {who:"협회",type:"h",text:"시상식 참석자 명단 조사 마감",date:"~9/18(금)"},
+    {who:"용역사",type:"y",text:"전시회 부스 추첨식(주요 안내사항 공지 포함)",date:"9/7(월)~9/11(금)"},
+    {who:"용역사",type:"y",text:"대회진행본부·물품보관소 등 행사진행 공간 확정",date:"9/7(월)~9/18(금)"},
+    {who:"용역사",type:"y",text:"각종 제작물 제작(통천, X배너, 사인물 등)",date:"9/7(월)~10/8(목)"},
     {who:"공동",type:"b",text:"홍보부스 디자인 제작",date:"9/7(월)~10/8(목)"},
+    {who:"용역사",type:"y",text:"프로그램 자료집 제작(PDF)",date:"9/7(월)~10/14(수)"},
+    {who:"협회",type:"h",text:"지방보조금 운영",date:"9/7(월)~11/6(금)"},
     {who:"공동",type:"b",text:"포스터세션 선정팀 안내(참가비 1인 면제)",date:"9/10(목)"},
-    {who:"용역사",type:"y",text:"수어통역 계획·계약",date:"9/14(월)~9/18(금)"},
+    {who:"협회",type:"h",text:"시상식 참석자 명단 조사 마감",date:"~9/18(금)"},
   ]},
   {label:"9월 3주",range:"9/14(월)~9/20(일)",tasks:[
-    {who:"용역사",type:"y",text:"홍보부스 홍보물 제작",date:"9/14(월)~9/29(화)"},
+    {who:"용역사",type:"y",text:"수어통역 계획·계약",date:"9/14(월)~9/18(금)"},
     {who:"용역사",type:"y",text:"튜토리얼 발표자료 업로드",date:"9/18(금)"},
+    {who:"용역사",type:"y",text:"협회 홍보부스 홍보물 제작",date:"9/14(월)~9/29(화)"},
+    {who:"용역사",type:"y",text:"대회 홈페이지 업체별 홍보자료 업로드 확인",date:"~9/29(화)"},
+  ]},
+  {label:"9월 4주",range:"9/21(월)~9/30(수)",tasks:[
+    {who:"용역사",type:"y",text:"홍보(보도자료 배포) — 총 2회(9월, 10월)"},
     {who:"용역사",type:"y",text:"튜토리얼 프로그램 홍보",date:"9/21(월)~10/8(목)"},
     {who:"용역사",type:"y",text:"프로그램 진행 기관 발표자료 업로드 마감",date:"9/25(금)"},
     {who:"용역사",type:"y",text:"포스터세션 선정팀 포스터 파일 제출",date:"9/25(금)"},
     {who:"용역사",type:"y",text:"셔틀버스 코스·정류장 확정",date:"9/21(월)~10/6(화)"},
-    {who:"용역사",type:"y",text:"공식행사(개회식·만남의자리) 시나리오 작성",date:"9/21(월)~10/23(금)"},
-    {who:"용역사",type:"y",text:"대회 홈페이지 업체별 홍보자료 업로드 확인",date:"~9/29(화)"},
-  ]},
-  {label:"9월 4주",range:"9/21(월)~9/27(일)",tasks:[
-    {who:"용역사",type:"y",text:"오찬·만찬 세부 계획 확정(장소·메뉴·참석대상)",date:"9/28(월)~10/16(금)"},
+    {who:"용역사",type:"y",text:"공식행사(개회식·만남의자리)시나리오 작성",date:"9/21(월)~10/23(금)"},
     {who:"용역사",type:"y",text:"프로그램·튜토리얼 홍보",date:"9/28(월)~10/8(목)"},
+    {who:"용역사",type:"y",text:"오찬·만찬 세부 계획 확정(장소·메뉴·참석대상)",date:"9/28(월)~10/16(금)"},
     {who:"용역사",type:"y",text:"주요 내빈 참석여부(공식행사·숙박 등) 확인",date:"9/28(월)~10/23(금)"},
-    {who:"용역사",type:"y",text:"홍보(보도자료 배포) — 총 2회(9월, 10월)"},
+    {who:"용역사",type:"y",text:"참가등록 일반신청 마감(일반등록)",date:"~9/30(수)"},
   ]},
 ]},
 {month:"10월 1~3주",badge:"10월",desc:"마무리 점검",weeks:[
   {label:"10월 1주",range:"10/5(월)~10/11(일)",tasks:[
     {who:"용역사",type:"y",text:"행사보험 가입",date:"10/6(화)~10/16(금)"},
     {who:"용역사",type:"y",text:"전시참가사 제출서류 확인",date:"~10/8(목)"},
-    {who:"용역사",type:"y",text:"전시참가사 기자재 확인",date:"~10/8(목)"},
+    {who:"용역사",type:"y",text:"전시참가사별 기자재 확인",date:"~10/8(목)"},
   ]},
   {label:"10월 2주",range:"10/12(월)~10/18(일)",tasks:[
     {who:"용역사",type:"y",text:"참가등록 명찰 제작",date:"10월"},
@@ -469,10 +508,10 @@ const data=[
     {who:"협회",type:"h",text:"튜토리얼 진행 정산",date:"11/3(화)"},
     {who:"협회",type:"h",text:"감사편지 발송(대회·프로그램·튜토리얼·전시회)",date:"11/9(월)~11/13(금)"},
     {who:"용역사",type:"y",text:"교육이수확인증 발급",date:"11/9(월)~12/31(목)"},
-    {who:"공동",type:"b",text:"결과보고서 제출",date:"~11/27(금)"},
     {who:"공동",type:"b",text:"평가회의",date:"11월 둘째 주"},
   ]},
-  {label:"11~12월",range:"11월 중~12월",tasks:[
+  {who:"공동",type:"b",text:"결과보고서 제출",date:"~11/27(금)"},
+  {label:"11월 말~12월",range:"11월 중~12월",tasks:[
     {who:"협회",type:"h",text:"지방교부금 정산",date:"~11/27(금)"},
     {who:"협회",type:"h",text:"사업비(자체·지원금) 정산",date:"~12/4(금)"},
   ]},
@@ -492,11 +531,11 @@ function getAllWeeks(){
 }
 
 // ══════════════════════════════════════════════════
-//  칩 빌더
+//  칩 빌더 (기존/커스텀 구분 없이 모두 수정·삭제·이동 가능)
 // ══════════════════════════════════════════════════
 function buildTaskChip(t, isCustom=false){
   const d=document.createElement('div');
-  d.className=`task-chip ${t.type}${isCustom?' custom-task':''}`;
+  d.className='task-chip '+t.type+' custom-task';
   d.dataset.type=t.type;
   const done=loadDone(), key=taskKey(t);
   if(done[key]) d.classList.add('done');
@@ -504,12 +543,48 @@ function buildTaskChip(t, isCustom=false){
   const who=document.createElement('span'); who.className='who'; who.textContent=t.who;
   const txt=document.createElement('span'); txt.className='task-text';
   txt.innerHTML=`<strong>${t.text}</strong>${t.date?`<span class="date-tag">${t.date}</span>`:''}`;
+  const handle=document.createElement('span'); handle.className='drag-handle'; handle.title='순서 이동'; handle.textContent='⠿';
+  const editBtn=document.createElement('button'); editBtn.className='edit-btn'; editBtn.title='수정'; editBtn.textContent='✎';
+  const del=document.createElement('button'); del.className='delete-btn'; del.title='삭제'; del.textContent='✕';
+  editBtn.addEventListener('click',e=>{e.stopPropagation(); openEditModal(t,d);});
+  del.addEventListener('click',e=>{e.stopPropagation(); deleteCustomTask(t,d);});
   d.appendChild(box); d.appendChild(who); d.appendChild(txt);
-  if(isCustom){
-    const del=document.createElement('button'); del.className='delete-btn'; del.title='삭제'; del.textContent='✕';
-    del.addEventListener('click',e=>{e.stopPropagation(); deleteCustomTask(t,d);});
-    d.appendChild(del);
-  }
+  d.appendChild(handle); d.appendChild(editBtn); d.appendChild(del);
+  // 드래그: 핸들에서만 시작
+  handle.addEventListener('mousedown', () => { d.draggable = true; });
+  handle.addEventListener('mouseup',   () => { d.draggable = false; });
+  d.draggable = false;
+  d.addEventListener('dragstart', e => {
+    dragSrc = d;
+    d.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+  });
+  d.addEventListener('dragend', () => {
+    d.draggable = false;
+    d.classList.remove('dragging');
+    document.querySelectorAll('.task-chip').forEach(c => c.classList.remove('drag-over'));
+  });
+  d.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragSrc && dragSrc !== d) d.classList.add('drag-over');
+  });
+  d.addEventListener('dragleave', () => d.classList.remove('drag-over'));
+  d.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    d.classList.remove('drag-over');
+    if (!dragSrc || dragSrc === d) return;
+    const container = d.parentNode;
+    const addBtn = container.querySelector('.add-here-btn');
+    const chips = [...container.querySelectorAll('.task-chip')];
+    const srcIdx = chips.indexOf(dragSrc), tgtIdx = chips.indexOf(d);
+    if (srcIdx < 0 || tgtIdx < 0) return;
+    if (srcIdx < tgtIdx) container.insertBefore(dragSrc, d.nextSibling);
+    else container.insertBefore(dragSrc, d);
+    saveWeekOrder(container);
+  });
   box.addEventListener('click',e=>{
     e.stopPropagation(); d.classList.toggle('done');
     const obj=loadDone();
@@ -517,6 +592,21 @@ function buildTaskChip(t, isCustom=false){
     saveDone(obj); updateProgress(d.closest('.week-row'));
   });
   return d;
+}
+
+// 주차 내 전체 칩 순서를 Firebase에 저장
+function saveWeekOrder(container){
+  const weekLabel = container.closest('.week-row').dataset.weekLabel;
+  const typeMap = {'협회':'h','용역사':'y','공동':'b'};
+  const reordered = [...container.querySelectorAll('.task-chip')].map(el => ({
+    who: el.querySelector('.who').textContent,
+    type: typeMap[el.querySelector('.who').textContent] || 'h',
+    text: el.querySelector('.task-text strong').textContent,
+    date: el.querySelector('.date-tag')?.textContent || '',
+    weekLabel, custom: true
+  }));
+  const others = loadCustom().filter(c => c.weekLabel !== weekLabel);
+  saveCustom([...others, ...reordered]);
 }
 
 function updateProgress(row){
@@ -529,15 +619,13 @@ function updateProgress(row){
 }
 
 // ══════════════════════════════════════════════════
-//  커스텀 업무 삭제
+//  업무 삭제 (기존/커스텀 모두)
 // ══════════════════════════════════════════════════
 function deleteCustomTask(t, chipEl){
   if(!confirm('이 업무를 삭제할까요?')) return;
-  let customs=loadCustom();
-  customs=customs.filter(c=>!(c.who===t.who&&c.text===t.text&&c.weekLabel===t.weekLabel));
-  saveCustom(customs);
-  const row=chipEl.closest('.week-row');
+  const row = chipEl.closest('.week-row');
   chipEl.remove();
+  saveWeekOrder(row.querySelector('.week-tasks'));
   updateProgress(row);
 }
 
@@ -556,17 +644,27 @@ function buildWeekRow(w, mIdx){
     n.innerHTML='<span>⚠️</span><span><strong>WLIC 기간 (8/11~8/17)</strong> — 주요 업무 배제 주간</span>';
     tasks.appendChild(n);
   } else {
-    if(w.tasks&&w.tasks.length>0){
-      const cnt=document.createElement('div'); cnt.className='done-count';
-      cnt.innerHTML=`<span>0/${w.tasks.length} 완료</span><div class="done-bar-wrap"><div class="done-bar" style="width:0%"></div></div>`;
-      lbl.appendChild(cnt);
-      w.tasks.forEach(t=>tasks.appendChild(buildTaskChip(t,false)));
+    // Firebase에 이 주차 데이터가 있으면 그걸 사용, 없으면 기본 data[]로 초기화
+    const savedTasks = loadCustom().filter(c=>c.weekLabel===w.label);
+    let tasksToRender;
+    if(savedTasks.length > 0){
+      tasksToRender = savedTasks;
+    } else if(w.tasks && w.tasks.length > 0){
+      // 기본 데이터를 Firebase에 저장 (custom 플래그 포함)
+      tasksToRender = w.tasks.map(t=>({...t, weekLabel:w.label, custom:true}));
+      const others = loadCustom().filter(c=>c.weekLabel!==w.label);
+      saveCustom([...others, ...tasksToRender]);
+    } else {
+      tasksToRender = [];
     }
-    // 커스텀 업무
-    const customs=loadCustom().filter(c=>c.weekLabel===w.label);
-    customs.forEach(t=>tasks.appendChild(buildTaskChip(t,true)));
+    if(tasksToRender.length > 0){
+      const cnt=document.createElement('div'); cnt.className='done-count';
+      cnt.innerHTML=`<span>0/${tasksToRender.length} 완료</span><div class="done-bar-wrap"><div class="done-bar" style="width:0%"></div></div>`;
+      lbl.appendChild(cnt);
+      tasksToRender.forEach(t=>tasks.appendChild(buildTaskChip(t,true)));
+    }
     // 빈 상태
-    if((!w.tasks||!w.tasks.length)&&!customs.length){
+    if(tasksToRender.length===0){
       const e=document.createElement('div'); e.style.cssText='color:#94A3B8;font-size:.78rem;padding:5px 4px;'; e.textContent='해당 주차 예정 업무 없음'; tasks.appendChild(e);
     }
     // 이 주차에 직접 추가 버튼
@@ -627,13 +725,24 @@ document.querySelectorAll('.filter-btn').forEach(btn=>{
 //  모달
 // ══════════════════════════════════════════════════
 let selectedType='h';
+let dragSrc=null;
+let editingTask=null;
+let editingChip=null;
 function selectType(btn, type){
   selectedType=type;
   document.querySelectorAll('.type-btn').forEach(b=>b.className='type-btn');
   btn.classList.add('sel-'+type);
 }
 
+// type-btn 클릭 이벤트 (module 스코프에서 onclick 대신 사용)
+document.querySelectorAll('.type-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>selectType(btn, btn.dataset.type));
+});
+
 function openModal(weekLabel=''){
+  editingTask=null; editingChip=null;
+  document.querySelector('.modal-header h3').textContent='✏️ 업무 추가';
+  document.getElementById('modalSave').textContent='추가하기';
   const overlay=document.getElementById('modalOverlay');
   const sel=document.getElementById('formWeek');
   sel.innerHTML='';
@@ -650,6 +759,26 @@ function openModal(weekLabel=''){
   overlay.classList.add('open');
 }
 
+function openEditModal(t, chipEl){
+  editingTask=t; editingChip=chipEl;
+  document.querySelector('.modal-header h3').textContent='✎ 업무 수정';
+  document.getElementById('modalSave').textContent='저장하기';
+  const overlay=document.getElementById('modalOverlay');
+  const sel=document.getElementById('formWeek');
+  sel.innerHTML='';
+  getAllWeeks().forEach(w=>{
+    const opt=document.createElement('option'); opt.value=w.weekLabel; opt.textContent=`${w.label}  (${w.range})`;
+    if(w.weekLabel===t.weekLabel) opt.selected=true;
+    sel.appendChild(opt);
+  });
+  document.getElementById('formText').value=t.text;
+  document.getElementById('formDate').value=t.date||'';
+  document.querySelectorAll('.type-btn').forEach(b=>b.className='type-btn');
+  document.querySelector(`.type-btn[data-type="${t.type}"]`).classList.add('sel-'+t.type);
+  selectedType=t.type;
+  overlay.classList.add('open');
+}
+
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); }
 
 document.getElementById('openModalBtn').addEventListener('click',()=>openModal());
@@ -663,17 +792,24 @@ document.getElementById('modalSave').addEventListener('click',()=>{
   const weekLabel=document.getElementById('formWeek').value;
   const date=document.getElementById('formDate').value.trim();
   const whoMap={h:'협회',y:'용역사',b:'공동'};
-  const newTask={who:whoMap[selectedType],type:selectedType,text,date,weekLabel,custom:true};
-  const customs=loadCustom(); customs.push(newTask); saveCustom(customs);
-  // DOM에 직접 추가
-  const rows=[...document.querySelectorAll('.week-row')];
-  const row=rows.find(r=>r.dataset.weekLabel===weekLabel);
-  if(row){
-    const tasks=row.querySelector('.week-tasks');
-    const addBtn=tasks.querySelector('.add-here-btn');
-    const chip=buildTaskChip(newTask,true);
-    tasks.insertBefore(chip,addBtn);
-    updateProgress(row);
+
+  if(editingTask && editingChip){
+    // ── 수정 모드 ──
+    // saveCustom() 후 onValue 리스너가 자동으로 칩을 교체하므로 DOM 직접 조작 안 함
+    const oldKey=taskKey(editingTask);
+    const updatedTask={...editingTask,who:whoMap[selectedType],type:selectedType,text,date,weekLabel};
+    let customs=loadCustom();
+    const idx=customs.findIndex(c=>c.who===editingTask.who&&c.text===editingTask.text&&c.weekLabel===editingTask.weekLabel);
+    if(idx>=0) customs[idx]=updatedTask;
+    saveCustom(customs);
+    // 완료 상태 키 업데이트
+    const doneObj=loadDone();
+    if(doneObj[oldKey]){ delete doneObj[oldKey]; doneObj[taskKey(updatedTask)]=1; saveDone(doneObj); }
+  } else {
+    // ── 추가 모드 ──
+    // saveCustom() 후 onValue 리스너가 자동으로 칩을 그리므로 DOM 직접 추가 안 함
+    const newTask={who:whoMap[selectedType],type:selectedType,text,date,weekLabel,custom:true};
+    const customs=loadCustom(); customs.push(newTask); saveCustom(customs);
   }
   closeModal();
 });
@@ -695,18 +831,14 @@ function monthCoversNum(m,n){
 }
 function getTasksForMonth(n){
   const res=[];
+  // 이벤트(D-DAY)는 data[]에서 직접 읽기
   data.forEach(m=>{
     if(!monthCoversNum(m,n)) return;
     if(m.special==='event'){
       if(n===10) m.event.forEach(e=>res.push({who:'행사',type:'k',text:e.date+' '+e.desc,date:'',week:'대회당일'}));
-      return;
     }
-    (m.weeks||[]).forEach(w=>{
-      if(w.wlic||!w.tasks) return;
-      w.tasks.forEach(t=>res.push({...t,week:w.label}));
-    });
   });
-  // 커스텀도 포함
+  // 일반 업무는 Firebase(loadCustom)에서만 읽기 (data[]와 중복 방지)
   const weeks=(data.filter(m=>monthCoversNum(m,n))||[]).flatMap(m=>(m.weeks||[]).map(w=>w.label));
   loadCustom().filter(c=>weeks.includes(c.weekLabel)).forEach(c=>res.push({...c,week:c.weekLabel}));
   return res;
