@@ -265,7 +265,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--surface);color:var(-
 // ══════════════════════════════════════════════════
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  
 const firebaseConfig = {
   apiKey: "AIzaSyA0s2eooo79g7pXOf0dkmAf1I0pgfpvkow",
   authDomain: "library-conference-2026.firebaseapp.com",
@@ -278,6 +279,18 @@ const firebaseConfig = {
 
 const _app = initializeApp(firebaseConfig);
 const _db  = getDatabase(_app);
+const _auth = getAuth(_app);
+
+// 익명 로그인 후 앱 시작
+signInAnonymously(_auth).catch(err => console.error('익명 로그인 실패:', err));
+onAuthStateChanged(_auth, user => {
+  if (user) {
+    render();
+    renderCalendar();
+    _dbReady = true;
+  }
+});
+  
 const _doneRef   = ref(_db, 'lib63/done');
 const _customRef = ref(_db, 'lib63/custom');
 
@@ -881,12 +894,6 @@ function closeCalPanel(){
 }
 document.getElementById('calPanelClose').addEventListener('click',closeCalPanel);
 
-// ══════════════════════════════════════════════════
-//  실행
-// ══════════════════════════════════════════════════
-render();
-renderCalendar();
-_dbReady = true;
 </script>
 
 
