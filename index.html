@@ -185,6 +185,24 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--surface);color:var(-
 </head>
 <body>
 
+<!-- 로그인 화면 -->
+<div id="loginScreen" style="display:flex;position:fixed;inset:0;background:#1E3A5F;z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:40px;width:360px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center;">
+    <div style="font-size:2rem;margin-bottom:8px;">📚</div>
+    <div style="font-size:1.15rem;font-weight:900;color:#1E3A5F;margin-bottom:4px;">전국도서관대회</div>
+    <div style="font-size:.8rem;color:#64748B;margin-bottom:28px;">제63회 업무 현황판</div>
+    <input id="loginId" type="email" placeholder="이메일" autocomplete="username"
+      style="width:100%;padding:11px 14px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:.92rem;margin-bottom:10px;outline:none;box-sizing:border-box;font-family:inherit;">
+    <input id="loginPw" type="password" placeholder="비밀번호" autocomplete="current-password"
+      style="width:100%;padding:11px 14px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:.92rem;margin-bottom:6px;outline:none;box-sizing:border-box;font-family:inherit;">
+    <div id="loginErr" style="color:#DC2626;font-size:.78rem;margin-bottom:10px;min-height:18px;"></div>
+    <button id="loginBtn"
+      style="width:100%;padding:12px;background:#1E3A5F;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s;">
+      로그인
+    </button>
+  </div>
+</div>
+
 <!-- 헤더 -->
 <header class="site-header">
   <div>
@@ -265,7 +283,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--surface);color:var(-
 // ══════════════════════════════════════════════════
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   
 const firebaseConfig = {
   apiKey: "AIzaSyA0s2eooo79g7pXOf0dkmAf1I0pgfpvkow",
@@ -277,20 +295,10 @@ const firebaseConfig = {
   appId: "1:1045335926932:web:2195fd0d078a27e836ec81"
 };
 
-const _app = initializeApp(firebaseConfig);
-const _db  = getDatabase(_app);
+const _app  = initializeApp(firebaseConfig);
+const _db   = getDatabase(_app);
 const _auth = getAuth(_app);
 
-// 익명 로그인 후 앱 시작
-signInAnonymously(_auth).catch(err => console.error('익명 로그인 실패:', err));
-onAuthStateChanged(_auth, user => {
-  if (user) {
-    render();
-    renderCalendar();
-    _dbReady = true;
-  }
-});
-  
 const _doneRef   = ref(_db, 'lib63/done');
 const _customRef = ref(_db, 'lib63/custom');
 
@@ -298,52 +306,103 @@ let _doneCache   = {};
 let _customCache = [];
 let _dbReady     = false;
 
-// ── Firebase 실시간 리스너 ──
-onValue(_doneRef, snap => {
-  _doneCache = snap.val() || {};
-  if (_dbReady) {
-    document.querySelectorAll('.task-chip').forEach(chip => {
-      const who  = chip.querySelector('.who')?.textContent || '';
-      const text = chip.querySelector('.task-text strong')?.textContent || '';
-      const key  = who + '|' + text;
-      if (_doneCache[key]) chip.classList.add('done');
-      else chip.classList.remove('done');
-    });
-    document.querySelectorAll('.week-row').forEach(row => updateProgress(row));
+
+// ══════════════════════════════════════════════════
+//  로그인 처리 (Authentication)
+// ══════════════════════════════════════════════════
+async function tryLogin() {
+  const email = document.getElementById('loginId').value.trim();
+  const pw    = document.getElementById('loginPw').value.trim();
+  const err   = document.getElementById('loginErr');
+  const btn   = document.getElementById('loginBtn');
+
+  if (!email || !pw) {
+    err.textContent = '아이디와 비밀번호를 입력해주세요.';
+    return;
+  }
+
+  btn.textContent = '로그인 중...';
+  btn.disabled = true;
+  err.textContent = '';
+
+  try {
+    await signInWithEmailAndPassword(_auth, email, pw);
+    // 성공 → onAuthStateChanged가 자동으로 처리
+  } catch (e) {
+    err.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.';
+    document.getElementById('loginPw').value = '';
+    document.getElementById('loginPw').focus();
+    btn.textContent = '로그인';
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('loginBtn').addEventListener('click', tryLogin);
+document.getElementById('loginPw').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+document.getElementById('loginId').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginPw').focus(); });
+
+// ══════════════════════════════════════════════════
+//  Firebase 인증 상태 감지 → 앱 시작
+// ══════════════════════════════════════════════════
+onAuthStateChanged(_auth, user => {
+  if (user) {
+    // 로그인 성공 → 화면 숨기고 앱 초기화
+    document.getElementById('loginScreen').style.display = 'none';
+    initApp();
   }
 });
 
-onValue(_customRef, snap => {
-  const val = snap.val();
-  _customCache = val ? Object.values(val) : [];
-  if (_dbReady) {
-    // 모든 칩 교체 (기존+커스텀 모두 동일하게 관리)
-    document.querySelectorAll('.week-row').forEach(row => {
-      const weekLabel = row.dataset.weekLabel;
-      const tasks = row.querySelector('.week-tasks');
-      if (!tasks) return;
-      // 기존 칩 전부 제거
-      tasks.querySelectorAll('.task-chip').forEach(el => el.remove());
-      // done-count 제거 후 재생성
-      row.querySelector('.done-count')?.remove();
-      const addBtn = tasks.querySelector('.add-here-btn');
-      const weekTasks = _customCache.filter(c => c.weekLabel === weekLabel);
-      if(weekTasks.length > 0){
-        const lbl = row.querySelector('.week-label');
-        const cnt = document.createElement('div'); cnt.className='done-count';
-        cnt.innerHTML=`<span>0/${weekTasks.length} 완료</span><div class="done-bar-wrap"><div class="done-bar" style="width:0%"></div></div>`;
-        lbl.appendChild(cnt);
-        weekTasks.forEach(t => {
-          const chip = buildTaskChip(t, true);
-          tasks.insertBefore(chip, addBtn);
+function initApp() {
+  if (_dbReady) return; // 중복 실행 방지
+
+    // 로그인 성공 후 리스너 등록
+    onValue(_doneRef, snap => {
+      _doneCache = snap.val() || {};
+      if (_dbReady) {
+        document.querySelectorAll('.task-chip').forEach(chip => {
+          const who  = chip.querySelector('.who')?.textContent || '';
+          const text = chip.querySelector('.task-text strong')?.textContent || '';
+          const key  = who + '|' + text;
+          if (_doneCache[key]) chip.classList.add('done');
+          else chip.classList.remove('done');
         });
+        document.querySelectorAll('.week-row').forEach(row => updateProgress(row));
       }
-      updateProgress(row);
     });
+
+    onValue(_customRef, snap => {
+      const val = snap.val();
+      _customCache = val ? Object.values(val) : [];
+      if (_dbReady) {
+        document.querySelectorAll('.week-row').forEach(row => {
+          const weekLabel = row.dataset.weekLabel;
+          const tasks = row.querySelector('.week-tasks');
+          if (!tasks) return;
+          tasks.querySelectorAll('.task-chip').forEach(el => el.remove());
+          row.querySelector('.done-count')?.remove();
+          const addBtn = tasks.querySelector('.add-here-btn');
+          const weekTasks = _customCache.filter(c => c.weekLabel === weekLabel);
+          if (weekTasks.length > 0) {
+            const lbl = row.querySelector('.week-label');
+            const cnt = document.createElement('div'); cnt.className = 'done-count';
+            cnt.innerHTML = `<span>0/${weekTasks.length} 완료</span><div class="done-bar-wrap"><div class="done-bar" style="width:0%"></div></div>`;
+            lbl.appendChild(cnt);
+            weekTasks.forEach(t => {
+              const chip = buildTaskChip(t, true);
+              tasks.insertBefore(chip, addBtn);
+            });
+          }
+          updateProgress(row);
+        });
+        renderCalendar();
+        applyFilter();
+      }
+    });
+
+    render();
     renderCalendar();
-    applyFilter();
-  }
-});
+    _dbReady = true;
+}
 
 function loadDone()    { return _doneCache; }
 function saveDone(o)   { _doneCache = o; set(_doneRef, o); }
