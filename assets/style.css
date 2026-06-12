@@ -161,6 +161,31 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--surface);color:var(-
 .event-table tr:nth-child(odd) td{background:#F8FAFC;}
 .event-date{font-weight:700;color:var(--key-dark);white-space:nowrap;}
 
+/*추가*/
+.month-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.collapse-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  color: #64748B;
+  font-size: .68rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background .15s;
+  line-height: 1.4;
+}
+.collapse-btn:hover {
+  background: #F1F5F9;
+  color: #334155;
+}
+
+.month-title { display: flex; align-items: center; gap: 8px; }
+
 /* ── 빈 주차 추가 버튼 ── */
 .add-here-btn{font-size:.72rem;color:var(--ink3);background:none;border:1.5px dashed var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-family:inherit;transition:all .15s;margin-top:2px;}
 .add-here-btn:hover{border-color:var(--accent);color:var(--accent);}
