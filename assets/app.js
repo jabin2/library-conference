@@ -485,23 +485,41 @@ function buildWeekRow(w) {
 }
 
 // ══════════════════════════════════════════════════
-//  메인 렌더 (3번: 월별 접기/펼치기 포함)
+//  메인 렌더 (월별 접기/펼치기 + localStorage 상태 유지)
 // ══════════════════════════════════════════════════
+const COLLAPSE_KEY = 'lib63_collapse'; // localStorage 키
+
+function getCollapseState() {
+  try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY)) || {}; } catch { return {}; }
+}
+function setCollapseState(badge, isOpen) {
+  const state = getCollapseState();
+  state[badge] = isOpen;
+  localStorage.setItem(COLLAPSE_KEY, JSON.stringify(state));
+}
+
 function render() {
   const main = document.getElementById('main'); main.innerHTML = '';
+  const collapseState = getCollapseState();
+
   data.forEach(m => {
     const sec = document.createElement('div'); sec.className = 'month-section';
+
+    // 저장된 상태 불러오기 (기본값: 펼침=true)
+    const isOpen = collapseState[m.badge] !== false;
+
     const title = document.createElement('div'); title.className = 'month-title';
-    title.innerHTML = `<span class="mo-badge">${m.badge}</span><span>${m.month}</span><span class="mo-desc">${m.desc}</span><button class="collapse-btn" aria-expanded="true" title="접기/펼치기">▲</button>`;
+    title.innerHTML = `<span class="mo-badge">${m.badge}</span><span>${m.month}</span><span class="mo-desc">${m.desc}</span><button class="collapse-btn" aria-expanded="${isOpen}" title="접기/펼치기">${isOpen ? '▲' : '▼'}</button>`;
     sec.appendChild(title);
 
     // ── 접기/펼치기 이벤트 ──
     title.querySelector('.collapse-btn').addEventListener('click', function() {
-      const isOpen = this.getAttribute('aria-expanded') === 'true';
-      this.setAttribute('aria-expanded', String(!isOpen));
-      this.textContent = isOpen ? '▼' : '▲';
+      const nowOpen = this.getAttribute('aria-expanded') === 'true';
+      this.setAttribute('aria-expanded', String(!nowOpen));
+      this.textContent = nowOpen ? '▼' : '▲';
       const content = sec.querySelector('.week-grid, .event-table');
-      if (content) content.style.display = isOpen ? 'none' : '';
+      if (content) content.style.display = nowOpen ? 'none' : '';
+      setCollapseState(m.badge, !nowOpen); // localStorage에 저장
     });
 
     if (m.special === 'event') {
@@ -510,10 +528,12 @@ function render() {
       const tbody = document.createElement('tbody');
       m.event.forEach(e => { const tr = document.createElement('tr'); tr.innerHTML = `<td class="event-date">${e.date}</td><td>${e.desc}</td>`; tbody.appendChild(tr); });
       tbl.appendChild(tbody); sec.appendChild(tbl);
+      if (!isOpen) tbl.style.display = 'none'; // 저장된 상태 즉시 반영
     } else if (m.weeks) {
       const grid = document.createElement('div'); grid.className = 'week-grid';
       m.weeks.forEach(w => grid.appendChild(buildWeekRow(w)));
       sec.appendChild(grid);
+      if (!isOpen) grid.style.display = 'none'; // 저장된 상태 즉시 반영
     }
     main.appendChild(sec);
   });
@@ -716,40 +736,47 @@ function closeCalPanel() {
 document.getElementById('calPanelClose').addEventListener('click', closeCalPanel);
 
 // ══════════════════════════════════════════════════
-//  2번: 진행중 업무 섹션
+//  진행중 업무 섹션
 // ══════════════════════════════════════════════════
 function renderInProgress() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const YEAR = today.getFullYear(); // 실제 현재 연도 사용 (2026)
   const inProgress = [];
 
+  // "6/12(목)" → Date 객체, 연도는 YEAR 사용
   function parseKorDate(str) {
     if (!str) return null;
-    // "~8/4(화)" 같은 형태에서 날짜 추출
     const m = str.match(/(\d{1,2})\/(\d{1,2})/);
     if (!m) return null;
-    return new Date(2025, parseInt(m[1]) - 1, parseInt(m[2]));
+    return new Date(YEAR, parseInt(m[1]) - 1, parseInt(m[2]));
   }
 
   loadCustom().forEach(t => {
     if (!t.date) return;
-    const parts = t.date.split('~');
-    // "~8/4" 처럼 시작이 ~인 경우: end만 있고 start는 없음 → 시작일을 프로젝트 시작으로 간주
+
+    // "~6/18(수)" → ['', '6/18(수)']
+    // "6/8(월)~12/31(목)" → ['6/8(월)', '12/31(목)']
+    // "6/12(목)" → ['6/12(목)']  단일 날짜
+    const raw = t.date.trim();
     let start, end;
-    if (parts.length === 1) {
-      // 날짜가 하나뿐 (단일 날짜)
+
+    if (raw.startsWith('~')) {
+      // "~6/18" 형태: 마감일까지 진행중 → 시작일은 아주 과거로
+      start = new Date(YEAR, 0, 1);
+      end   = parseKorDate(raw.slice(1));
+    } else if (raw.includes('~')) {
+      const parts = raw.split('~');
       start = parseKorDate(parts[0]);
-      end   = start;
-    } else if (parts[0].trim() === '' || parts[0].trim() === '~') {
-      // "~8/4" 형태: 이미 지난 마감일 → 오늘이 end 이전이면 진행중
-      start = new Date(2025, 0, 1); // 1월 1일을 시작으로 간주
-      end   = parseKorDate(parts[1]);
+      end   = parseKorDate(parts[1]) || start;
     } else {
-      start = parseKorDate(parts[0]);
-      end   = parts[1] ? parseKorDate(parts[1]) : start;
+      // 단일 날짜
+      start = parseKorDate(raw);
+      end   = start;
     }
+
     if (!start || !end) return;
-    if (loadDone()[taskKey(t)]) return; // 완료된 건 제외
+    if (loadDone()[taskKey(t)]) return; // 완료 제외
     if (start <= today && today <= end) inProgress.push(t);
   });
 
@@ -759,10 +786,7 @@ function renderInProgress() {
   if (!sec) return;
 
   body.innerHTML = '';
-  if (!inProgress.length) {
-    sec.style.display = 'none';
-    return;
-  }
+  if (!inProgress.length) { sec.style.display = 'none'; return; }
   sec.style.display = 'block';
   cnt.textContent = `${inProgress.length}건`;
 
@@ -771,5 +795,5 @@ function renderInProgress() {
     row.className = `cal-task-row ${t.type}`;
     row.innerHTML = `<span class="ct-who">${t.who}</span><span class="ct-week">${t.weekLabel}</span><span class="ct-text"><strong>${t.text}</strong></span>${t.date ? `<span class="ct-date">${t.date}</span>` : ''}`;
     body.appendChild(row);
-  });a
+  });
 }
