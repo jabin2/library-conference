@@ -71,11 +71,6 @@ onAuthStateChanged(_auth, user => {
 
 // ══════════════════════════════════════════════════
 //  앱 초기화 (로그인 성공 후 호출)
-//  [버그수정] Firebase에서 custom 데이터를 먼저 받은 뒤
-//  render()를 실행해야 다른 기기에서도 추가한 업무가 유지됨.
-//  기존: render() 즉시 호출 → _customCache 비어있는 상태로 렌더
-//       → buildWeekRow가 data[]로 Firebase를 덮어씀
-//  수정: onValue(_customRef) 콜백 안에서 첫 로드 시에만 render() 호출
 // ══════════════════════════════════════════════════
 function initApp() {
   if (_dbReady) return;
@@ -95,9 +90,7 @@ function initApp() {
     }
   });
 
-  // [버그수정] initialized 플래그를 먼저 확인 후 custom 리스너 등록
-  // - initialized=true : Firebase 데이터가 정본 → 절대 data[]로 덮어쓰지 않음
-  // - initialized=false/null : 최초 1회만 data[]로 초기화 후 플래그 저장
+  // initialized 플래그 먼저 확인 후 custom 리스너 등록
   onValue(_initRef, snapInit => {
     _initialized = snapInit.val() === true;
 
@@ -121,10 +114,11 @@ function initApp() {
           const obj = {};
           allTasks.forEach((item, i) => { obj['t' + i] = item; });
           set(_customRef, obj);
-          set(_initRef, true); // 이후 절대 data[]로 덮어쓰지 않음
+          set(_initRef, true);
         }
         render();
         renderCalendar();
+        renderInProgress();
         _dbReady = true;
         return;
       }
@@ -152,6 +146,7 @@ function initApp() {
         updateProgress(row);
       });
       renderCalendar();
+      renderInProgress();
       applyFilter();
     });
   });
@@ -451,9 +446,6 @@ function deleteTask(t, chipEl) {
 
 // ══════════════════════════════════════════════════
 //  주차 행 빌더
-//  [버그수정] 기존에는 Firebase에 데이터 없을 때 data[]로 바로 저장했으나
-//  이제는 render() 자체가 _customCache 로드 후 호출되므로
-//  Firebase에 데이터가 있으면 그걸 쓰고, 없으면 data[]를 초기값으로 저장
 // ══════════════════════════════════════════════════
 function buildWeekRow(w) {
   const row = document.createElement('div'); row.className = 'week-row';
@@ -467,7 +459,6 @@ function buildWeekRow(w) {
     n.innerHTML = '<span>⚠️</span><span><strong>WLIC 기간 (8/11~8/17)</strong> — 주요 업무 배제 주간</span>';
     tasks.appendChild(n);
   } else {
-    // initialized=true 이후엔 Firebase(_customCache)만 사용 → data[]로 절대 덮어쓰지 않음
     const tasksToRender = loadCustom().filter(c => c.weekLabel === w.label);
 
     if (tasksToRender.length > 0) {
@@ -494,15 +485,25 @@ function buildWeekRow(w) {
 }
 
 // ══════════════════════════════════════════════════
-//  메인 렌더
+//  메인 렌더 (3번: 월별 접기/펼치기 포함)
 // ══════════════════════════════════════════════════
 function render() {
   const main = document.getElementById('main'); main.innerHTML = '';
   data.forEach(m => {
     const sec = document.createElement('div'); sec.className = 'month-section';
     const title = document.createElement('div'); title.className = 'month-title';
-    title.innerHTML = `<span class="mo-badge">${m.badge}</span><span>${m.month}</span><span class="mo-desc">${m.desc}</span>`;
+    title.innerHTML = `<span class="mo-badge">${m.badge}</span><span>${m.month}</span><span class="mo-desc">${m.desc}</span><button class="collapse-btn" aria-expanded="true" title="접기/펼치기">▲</button>`;
     sec.appendChild(title);
+
+    // ── 접기/펼치기 이벤트 ──
+    title.querySelector('.collapse-btn').addEventListener('click', function() {
+      const isOpen = this.getAttribute('aria-expanded') === 'true';
+      this.setAttribute('aria-expanded', String(!isOpen));
+      this.textContent = isOpen ? '▼' : '▲';
+      const content = sec.querySelector('.week-grid, .event-table');
+      if (content) content.style.display = isOpen ? 'none' : '';
+    });
+
     if (m.special === 'event') {
       const tbl = document.createElement('table'); tbl.className = 'event-table';
       tbl.innerHTML = '<thead><tr><th style="width:120px">날짜</th><th>주요 행사</th></tr></thead>';
@@ -668,6 +669,8 @@ function renderCalendar() {
 }
 
 let activePanelBtn = null;
+
+// 1번: 월별 빠른 탐색 패널 — 주차 순서 정렬 + 그룹핑
 function openCalPanel(mo, tasks, btn) {
   const panel = document.getElementById('calPanel'), title = document.getElementById('calPanelTitle'), body = document.getElementById('calPanelBody');
   if (activePanelBtn === btn && panel.classList.contains('open')) { closeCalPanel(); return; }
@@ -675,12 +678,32 @@ function openCalPanel(mo, tasks, btn) {
   btn.classList.add('active-month'); activePanelBtn = btn;
   title.textContent = `${mo.label} 업무 목록 (${tasks.length}건)`;
   body.innerHTML = '';
-  if (!tasks.length) { body.innerHTML = '<div class="cal-empty">해당 월 업무 없음</div>'; }
-  else tasks.forEach(t => {
-    const row = document.createElement('div'); row.className = `cal-task-row ${t.type}`;
-    row.innerHTML = `<span class="ct-who">${t.who}</span><span class="ct-week">${t.week}</span><span class="ct-text"><strong>${t.text}</strong></span>${t.date ? `<span class="ct-date">${t.date}</span>` : ''}`;
-    body.appendChild(row);
-  });
+  if (!tasks.length) {
+    body.innerHTML = '<div class="cal-empty">해당 월 업무 없음</div>';
+  } else {
+    // data[]에서 주차 순서 추출
+    const weekOrder = [];
+    data.forEach(m => { if (m.weeks) m.weeks.forEach(w => { if (!weekOrder.includes(w.label)) weekOrder.push(w.label); }); });
+    // 주차 순서대로 정렬
+    const sorted = [...tasks].sort((a, b) => {
+      const ai = weekOrder.indexOf(a.week), bi = weekOrder.indexOf(b.week);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+    // 주차별 그룹핑
+    const groups = {};
+    sorted.forEach(t => { (groups[t.week] = groups[t.week] || []).push(t); });
+    Object.entries(groups).forEach(([weekLabel, items]) => {
+      const hdr = document.createElement('div');
+      hdr.className = 'cal-week-header';
+      hdr.textContent = weekLabel;
+      body.appendChild(hdr);
+      items.forEach(t => {
+        const row = document.createElement('div'); row.className = `cal-task-row ${t.type}`;
+        row.innerHTML = `<span class="ct-who">${t.who}</span><span class="ct-week">${t.week}</span><span class="ct-text"><strong>${t.text}</strong></span>${t.date ? `<span class="ct-date">${t.date}</span>` : ''}`;
+        body.appendChild(row);
+      });
+    });
+  }
   panel.classList.add('open');
   setTimeout(() => panel.scrollIntoView({behavior:'smooth', block:'nearest'}), 50);
 }
@@ -691,3 +714,62 @@ function closeCalPanel() {
   activePanelBtn = null;
 }
 document.getElementById('calPanelClose').addEventListener('click', closeCalPanel);
+
+// ══════════════════════════════════════════════════
+//  2번: 진행중 업무 섹션
+// ══════════════════════════════════════════════════
+function renderInProgress() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const inProgress = [];
+
+  function parseKorDate(str) {
+    if (!str) return null;
+    // "~8/4(화)" 같은 형태에서 날짜 추출
+    const m = str.match(/(\d{1,2})\/(\d{1,2})/);
+    if (!m) return null;
+    return new Date(2025, parseInt(m[1]) - 1, parseInt(m[2]));
+  }
+
+  loadCustom().forEach(t => {
+    if (!t.date) return;
+    const parts = t.date.split('~');
+    // "~8/4" 처럼 시작이 ~인 경우: end만 있고 start는 없음 → 시작일을 프로젝트 시작으로 간주
+    let start, end;
+    if (parts.length === 1) {
+      // 날짜가 하나뿐 (단일 날짜)
+      start = parseKorDate(parts[0]);
+      end   = start;
+    } else if (parts[0].trim() === '' || parts[0].trim() === '~') {
+      // "~8/4" 형태: 이미 지난 마감일 → 오늘이 end 이전이면 진행중
+      start = new Date(2025, 0, 1); // 1월 1일을 시작으로 간주
+      end   = parseKorDate(parts[1]);
+    } else {
+      start = parseKorDate(parts[0]);
+      end   = parts[1] ? parseKorDate(parts[1]) : start;
+    }
+    if (!start || !end) return;
+    if (loadDone()[taskKey(t)]) return; // 완료된 건 제외
+    if (start <= today && today <= end) inProgress.push(t);
+  });
+
+  const sec  = document.getElementById('inProgressSection');
+  const body = document.getElementById('inProgressBody');
+  const cnt  = document.getElementById('inProgressCount');
+  if (!sec) return;
+
+  body.innerHTML = '';
+  if (!inProgress.length) {
+    sec.style.display = 'none';
+    return;
+  }
+  sec.style.display = 'block';
+  cnt.textContent = `${inProgress.length}건`;
+
+  inProgress.forEach(t => {
+    const row = document.createElement('div');
+    row.className = `cal-task-row ${t.type}`;
+    row.innerHTML = `<span class="ct-who">${t.who}</span><span class="ct-week">${t.weekLabel}</span><span class="ct-text"><strong>${t.text}</strong></span>${t.date ? `<span class="ct-date">${t.date}</span>` : ''}`;
+    body.appendChild(row);
+  });a
+}
