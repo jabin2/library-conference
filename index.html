@@ -53,14 +53,18 @@
   </div>
 </div>
 
-<!-- 진행중 섹션 -->
+<!-- 진행중 업무 섹션 (달력과 필터 사이) -->
 <div id="inProgressSection" class="in-progress-section" style="display:none">
   <div class="in-progress-header">
     <span class="in-progress-badge">⏳ 진행중</span>
     <span id="inProgressCount" class="in-progress-count"></span>
     <span class="in-progress-label">건이 현재 진행중입니다</span>
+    <button class="ip-toggle" id="ipToggleTop" title="접기/펼치기" onclick="toggleInProgress()">▲</button>
   </div>
   <div id="inProgressBody" class="in-progress-body"></div>
+  <div class="in-progress-footer" id="ipFooter">
+    <button class="ip-toggle ip-toggle-bottom" title="접기" onclick="toggleInProgress()">▲ 접기</button>
+  </div>
 </div>
 
 <!-- 필터 + 추가 버튼 -->
