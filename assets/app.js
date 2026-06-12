@@ -461,6 +461,27 @@ function buildWeekRow(w) {
   } else {
     const tasksToRender = loadCustom().filter(c => c.weekLabel === w.label);
 
+    // 4번: 주차 내 업무를 시작일 기준 오름차순 정렬
+    // ~7/10 → 해당 월 1일 start, 단일날짜 → 그 날, 범위 → 시작일
+    const SORT_YEAR = new Date().getFullYear();
+    function parseSortDate(dateStr) {
+      if (!dateStr) return new Date(SORT_YEAR, 11, 31); // 날짜 없으면 맨 뒤
+      const raw = dateStr.trim();
+      let targetStr;
+      if (raw.startsWith('~')) {
+        // "~7/10" → 해당 월 1일을 시작으로
+        const m = raw.match(/(\d{1,2})\//);
+        if (m) return new Date(SORT_YEAR, parseInt(m[1]) - 1, 1);
+        return new Date(SORT_YEAR, 11, 31);
+      } else {
+        targetStr = raw.split('~')[0]; // 범위면 시작일만
+      }
+      const m = targetStr.match(/(\d{1,2})\/(\d{1,2})/);
+      if (!m) return new Date(SORT_YEAR, 11, 31);
+      return new Date(SORT_YEAR, parseInt(m[1]) - 1, parseInt(m[2]));
+    }
+    tasksToRender.sort((a, b) => parseSortDate(a.date) - parseSortDate(b.date));
+
     if (tasksToRender.length > 0) {
       const cnt = document.createElement('div'); cnt.className = 'done-count';
       cnt.innerHTML = `<span>0/${tasksToRender.length} 완료</span><div class="done-bar-wrap"><div class="done-bar" style="width:0%"></div></div>`;
@@ -738,13 +759,31 @@ document.getElementById('calPanelClose').addEventListener('click', closeCalPanel
 // ══════════════════════════════════════════════════
 //  진행중 업무 섹션
 // ══════════════════════════════════════════════════
+let _inProgressOpen = true;
+
+// HTML onclick에서 호출하므로 window에 노출
+window.toggleInProgress = function() {
+  _inProgressOpen = !_inProgressOpen;
+  const body   = document.getElementById('inProgressBody');
+  const footer = document.getElementById('ipFooter');
+  const btns   = document.querySelectorAll('.ip-toggle');
+  body.style.display   = _inProgressOpen ? 'flex' : 'none';
+  footer.style.display = _inProgressOpen ? 'block' : 'none';
+  btns.forEach(b => {
+    b.textContent = _inProgressOpen
+      ? (b.classList.contains('ip-toggle-bottom') ? '▲ 접기' : '▲')
+      : '▼';
+  });
+};
+
 function renderInProgress() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const YEAR = today.getFullYear(); // 실제 현재 연도 사용 (2026)
+  const YEAR = today.getFullYear();
   const inProgress = [];
+  const seen = new Set(); // 중복 제거용
 
-  // "6/12(목)" → Date 객체, 연도는 YEAR 사용
+  // "6/12(목)" → Date, YEAR 기준
   function parseKorDate(str) {
     if (!str) return null;
     const m = str.match(/(\d{1,2})\/(\d{1,2})/);
@@ -752,32 +791,39 @@ function renderInProgress() {
     return new Date(YEAR, parseInt(m[1]) - 1, parseInt(m[2]));
   }
 
+  // "~7/10" → 7월 1일 start
+  // "~8/19" → 8월 1일 start
+  function parseStartFromTilde(endDateStr) {
+    const m = endDateStr.match(/(\d{1,2})\//);
+    if (!m) return new Date(YEAR, 0, 1);
+    return new Date(YEAR, parseInt(m[1]) - 1, 1); // 해당 월 1일
+  }
+
   loadCustom().forEach(t => {
     if (!t.date) return;
-
-    // "~6/18(수)" → ['', '6/18(수)']
-    // "6/8(월)~12/31(목)" → ['6/8(월)', '12/31(목)']
-    // "6/12(목)" → ['6/12(목)']  단일 날짜
     const raw = t.date.trim();
     let start, end;
 
     if (raw.startsWith('~')) {
-      // "~6/18" 형태: 마감일까지 진행중 → 시작일은 아주 과거로
-      start = new Date(YEAR, 0, 1);
-      end   = parseKorDate(raw.slice(1));
+      // "~7/10(금)" → start: 7월 1일, end: 7월 10일
+      const endPart = raw.slice(1);
+      start = parseStartFromTilde(endPart);
+      end   = parseKorDate(endPart);
     } else if (raw.includes('~')) {
       const parts = raw.split('~');
       start = parseKorDate(parts[0]);
-      end   = parseKorDate(parts[1]) || start;
+      end   = parts[1] ? parseKorDate(parts[1]) : start;
     } else {
-      // 단일 날짜
       start = parseKorDate(raw);
       end   = start;
     }
 
     if (!start || !end) return;
-    if (loadDone()[taskKey(t)]) return; // 완료 제외
-    if (start <= today && today <= end) inProgress.push(t);
+    if (loadDone()[taskKey(t)]) return;
+    if (start <= today && today <= end) {
+      const uid = taskKey(t);
+      if (!seen.has(uid)) { seen.add(uid); inProgress.push(t); }
+    }
   });
 
   const sec  = document.getElementById('inProgressSection');
@@ -788,11 +834,17 @@ function renderInProgress() {
   body.innerHTML = '';
   if (!inProgress.length) { sec.style.display = 'none'; return; }
   sec.style.display = 'block';
-  cnt.textContent = `${inProgress.length}건`;
+  cnt.textContent = inProgress.length; // 숫자만 — HTML에서 "건" 처리
+
+  // 접기/펼치기 상태 반영
+  body.style.display = _inProgressOpen ? 'flex' : 'none';
+  const toggleBtns = sec.querySelectorAll('.ip-toggle');
+  toggleBtns.forEach(b => b.textContent = _inProgressOpen ? '▲' : '▼');
 
   inProgress.forEach(t => {
     const row = document.createElement('div');
     row.className = `cal-task-row ${t.type}`;
+    row.style.marginBottom = '6px';
     row.innerHTML = `<span class="ct-who">${t.who}</span><span class="ct-week">${t.weekLabel}</span><span class="ct-text"><strong>${t.text}</strong></span>${t.date ? `<span class="ct-date">${t.date}</span>` : ''}`;
     body.appendChild(row);
   });
