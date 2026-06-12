@@ -160,8 +160,11 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--surface);color:var(-
 .event-table td{padding:10px 14px;font-size:.81rem;border-top:1px solid var(--border);vertical-align:top;}
 .event-table tr:nth-child(odd) td{background:#F8FAFC;}
 .event-date{font-weight:700;color:var(--key-dark);white-space:nowrap;}
+.month-title { display: flex; align-items: center; gap: 8px; }
 
-/*추가*/
+/* ══════════════════════════════════════════════════
+   3번: 월별 접기/펼치기 버튼
+══════════════════════════════════════════════════ */
 .month-title {
   display: flex;
   align-items: center;
@@ -174,17 +177,116 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--surface);color:var(-
   border-radius: 6px;
   color: #64748B;
   font-size: .68rem;
-  padding: 2px 8px;
+  padding: 2px 9px;
   cursor: pointer;
-  transition: background .15s;
-  line-height: 1.4;
+  transition: background .15s, color .15s;
+  line-height: 1.5;
+  flex-shrink: 0;
 }
 .collapse-btn:hover {
   background: #F1F5F9;
   color: #334155;
 }
 
-.month-title { display: flex; align-items: center; gap: 8px; }
+/* ══════════════════════════════════════════════════
+   1번: 달력 패널 주차 헤더
+══════════════════════════════════════════════════ */
+.cal-week-header {
+  font-size: .72rem;
+  font-weight: 700;
+  color: #64748B;
+  padding: 8px 4px 4px;
+  border-top: 1px solid #E2E8F0;
+  margin-top: 4px;
+}
+.cal-week-header:first-child {
+  border-top: none;
+  margin-top: 0;
+}
+
+/* ══════════════════════════════════════════════════
+   2번: 진행중 업무 섹션
+══════════════════════════════════════════════════ */
+.in-progress-section {
+  margin: 0 auto 14px;
+  max-width: 1400px;
+  padding: 14px 20px;
+  background: #FFFBEB;
+  border: 1px solid #FCD34D;
+  border-radius: 12px;
+}
+.in-progress-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.in-progress-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #F59E0B;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.in-progress-count {
+  font-size: .85rem;
+  font-weight: 700;
+  color: #92400E;
+}
+.in-progress-label {
+  font-size: .78rem;
+  color: #92400E;
+}
+.in-progress-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+/* 진행중 행은 기존 cal-task-row 스타일을 그대로 활용하되 왼쪽 강조선 추가 */
+.in-progress-body .cal-task-row {
+  border-left: 3px solid #F59E0B;
+}
+
+/* ══════════════════════════════════════════════════
+   진행중 섹션 추가 스타일 (접기/펼치기, 간격)
+══════════════════════════════════════════════════ */
+.in-progress-body {
+  flex-direction: column;
+  gap: 8px;          /* 2번: 항목 사이 간격 */
+}
+.in-progress-body .cal-task-row {
+  margin-bottom: 0;  /* gap으로 처리하므로 개별 margin 제거 */
+}
+.ip-toggle {
+  margin-left: auto;
+  background: none;
+  border: 1px solid #FCD34D;
+  border-radius: 6px;
+  color: #92400E;
+  font-size: .7rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.ip-toggle:hover { background: #FEF3C7; }
+.in-progress-footer {
+  margin-top: 8px;
+  text-align: center;
+}
+.ip-toggle-bottom {
+  margin-left: 0;
+  font-size: .72rem;
+  padding: 3px 14px;
+  border-radius: 20px;
+}
+
 
 /* ── 빈 주차 추가 버튼 ── */
 .add-here-btn{font-size:.72rem;color:var(--ink3);background:none;border:1.5px dashed var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-family:inherit;transition:all .15s;margin-top:2px;}
